@@ -216,7 +216,7 @@ export default function Home() {
                 >
                   <X className="w-4 h-4" />
                 </Button>
-                <div className="absolute bottom-2 left-2 px-3 py-1 bg-background/80 backdrop-blur-sm rounded text-sm text-foreground">
+                <div className="absolute bottom-2 left-2 right-12 px-3 py-1 bg-background/80 backdrop-blur-sm rounded text-sm text-foreground truncate">
                   {selectedFile?.name}
                 </div>
               </div>

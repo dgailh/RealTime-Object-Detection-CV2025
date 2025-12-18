@@ -2,7 +2,7 @@
 name = "repl-nix-workspace"
 version = "0.1.0"
 description = "Add your description here"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "fastapi>=0.125.0",
     "numpy>=2.3.5",
@@ -10,8 +10,12 @@ dependencies = [
     "pillow>=12.0.0",
     "pydantic>=2.12.5",
     "python-multipart>=0.0.21",
+    "ultralytics",
     "uvicorn[standard]>=0.38.0",
 ]
+
+[tool.uv]
+environments = ["python_version >= '3.11' and python_version < '3.12'"]
 
 [[tool.uv.index]]
 explicit = true
@@ -1076,7 +1080,6 @@ u8darts = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
 uhg = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
 uitestrunner-syberos = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
 ultimate-rvc = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
-ultralytics = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
 ultralytics-thop = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
 unav = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
 unbabel-comet = [{ index = "pytorch-cpu", marker = "platform_system == 'Linux'" }]
