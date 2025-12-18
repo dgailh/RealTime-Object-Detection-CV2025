@@ -6,13 +6,7 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
-    print("Warning: ultralytics not installed. Using mock detection.")
+from ultralytics import YOLO
 
 WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "./weights/best.pt")
 CONF_THRES = float(os.getenv("YOLO_CONF", "0.25"))
@@ -33,15 +27,11 @@ model = None
 @app.on_event("startup")
 async def startup_event():
     global model
-    if YOLO_AVAILABLE and os.path.exists(WEIGHTS_PATH):
-        print(f"Loading YOLOv8 model from {WEIGHTS_PATH}...")
-        model = YOLO(WEIGHTS_PATH)
-        print("Model loaded successfully")
-    else:
-        if not YOLO_AVAILABLE:
-            print("YOLOv8 not available - running in mock mode")
-        elif not os.path.exists(WEIGHTS_PATH):
-            print(f"Weights not found at {WEIGHTS_PATH} - running in mock mode")
+    if not os.path.exists(WEIGHTS_PATH):
+        raise RuntimeError(f"Model weights not found at {WEIGHTS_PATH}")
+    print(f"Loading YOLOv8 model from {WEIGHTS_PATH}...")
+    model = YOLO(WEIGHTS_PATH)
+    print("Model loaded successfully")
 
 def _load_image_from_upload(file_bytes: bytes) -> np.ndarray:
     arr = np.frombuffer(file_bytes, dtype=np.uint8)
@@ -49,14 +39,6 @@ def _load_image_from_upload(file_bytes: bytes) -> np.ndarray:
     if img is None:
         raise ValueError("Could not decode image. Supported: jpg/jpeg/png/webp.")
     return img
-
-def _mock_detection(img: np.ndarray) -> List[Dict[str, Any]]:
-    h, w = img.shape[:2]
-    x1 = int(w * 0.25)
-    y1 = int(h * 0.6)
-    x2 = int(w * 0.75)
-    y2 = int(h * 0.85)
-    return [{"bbox": [x1, y1, x2, y2], "conf": 0.87}]
 
 def _annotate_image(img_bgr: np.ndarray, detections: List[Dict[str, Any]]) -> np.ndarray:
     out = img_bgr.copy()
@@ -81,13 +63,15 @@ def health():
     return {
         "status": "ok",
         "weights": WEIGHTS_PATH,
-        "model_loaded": model is not None,
-        "yolo_available": YOLO_AVAILABLE
+        "model_loaded": model is not None
     }
 
 @app.post("/detect")
 async def detect(file: UploadFile = File(...)):
     global model
+
+    if model is None:
+        raise HTTPException(status_code=500, detail="Model not loaded")
 
     content = await file.read()
     try:
@@ -97,19 +81,16 @@ async def detect(file: UploadFile = File(...)):
 
     h, w = img.shape[:2]
 
-    if model is None:
-        detections = _mock_detection(img)
-    else:
-        results = model.predict(img, conf=CONF_THRES, iou=IOU_THRES, verbose=False)
-        detections = []
-        if results and results[0].boxes is not None and len(results[0].boxes) > 0:
-            boxes_xyxy = results[0].boxes.xyxy.cpu().numpy()
-            confs = results[0].boxes.conf.cpu().numpy()
-            for (x1, y1, x2, y2), c in zip(boxes_xyxy, confs):
-                detections.append({
-                    "bbox": [int(x1), int(y1), int(x2), int(y2)],
-                    "conf": float(c)
-                })
+    results = model.predict(img, conf=CONF_THRES, iou=IOU_THRES, verbose=False)
+    detections: List[Dict[str, Any]] = []
+    if results and results[0].boxes is not None and len(results[0].boxes) > 0:
+        boxes_xyxy = results[0].boxes.xyxy.cpu().numpy()
+        confs = results[0].boxes.conf.cpu().numpy()
+        for (x1, y1, x2, y2), c in zip(boxes_xyxy, confs):
+            detections.append({
+                "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                "conf": float(c)
+            })
 
     annotated = _annotate_image(img, detections)
     annotated_b64 = _bgr_to_base64_jpeg(annotated)
