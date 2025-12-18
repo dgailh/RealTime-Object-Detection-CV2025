@@ -36,6 +36,34 @@ export function registerProxyRoutes(app: Express): void {
     // Pipe the incoming request body to the proxy request
     req.pipe(proxyReq, { end: true });
   });
+
+  // Proxy for detect-and-blur endpoint
+  app.post('/api/detect-and-blur', (req: Request, res: Response) => {
+    const options = {
+      hostname: '127.0.0.1',
+      port: parseInt(FASTAPI_PORT),
+      path: '/detect-and-blur',
+      method: 'POST',
+      headers: {
+        ...req.headers,
+        host: `127.0.0.1:${FASTAPI_PORT}`,
+      },
+    };
+
+    const proxyReq = http.request(options, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+      proxyRes.pipe(res, { end: true });
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('Proxy request error:', err);
+      res.status(503).json({
+        detail: 'Detection service unavailable. Please try again later.',
+      });
+    });
+
+    req.pipe(proxyReq, { end: true });
+  });
 }
 
 export async function registerRoutes(

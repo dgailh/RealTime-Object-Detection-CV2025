@@ -17,6 +17,8 @@ export default function Home() {
   const [detectionResult, setDetectionResult] = useState<DetectionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [blurEnabled, setBlurEnabled] = useState(false);
+  const [blurredImageUrl, setBlurredImageUrl] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -83,6 +85,7 @@ export default function Home() {
 
     setIsDetecting(true);
     setError(null);
+    setBlurredImageUrl(null);
 
     try {
       const formData = new FormData();
@@ -100,10 +103,25 @@ export default function Home() {
 
       const result: DetectionResponse = await response.json();
       setDetectionResult(result);
+
+      if (blurEnabled && result.detections.length > 0) {
+        const blurFormData = new FormData();
+        blurFormData.append("file", selectedFile);
+
+        const blurResponse = await fetch("/api/detect-and-blur", {
+          method: "POST",
+          body: blurFormData,
+        });
+
+        if (blurResponse.ok) {
+          const blurResult = await blurResponse.json();
+          setBlurredImageUrl(blurResult.image_blurred_base64);
+        }
+      }
       
       toast({
         title: "Detection Complete",
-        description: `Found ${result.detections.length} license plate(s)`,
+        description: `Found ${result.detections.length} license plate(s)${blurEnabled && result.detections.length > 0 ? " - plates blurred" : ""}`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred";
@@ -126,6 +144,7 @@ export default function Home() {
     setPreviewUrl(null);
     setDetectionResult(null);
     setError(null);
+    setBlurredImageUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -245,9 +264,14 @@ export default function Home() {
             </div>
 
             <div className="flex items-center justify-center gap-3 pt-4 border-t">
-              <Switch disabled id="blur-toggle" data-testid="switch-blur" />
-              <Label htmlFor="blur-toggle" className="text-muted-foreground opacity-50 cursor-not-allowed">
-                Blur plate numbers (coming soon)
+              <Switch 
+                id="blur-toggle" 
+                checked={blurEnabled}
+                onCheckedChange={setBlurEnabled}
+                data-testid="switch-blur" 
+              />
+              <Label htmlFor="blur-toggle" className="text-foreground cursor-pointer">
+                Blur detected plates
               </Label>
             </div>
           </CardContent>
@@ -313,11 +337,18 @@ export default function Home() {
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <ScanLine className="w-5 h-5" />
-                    Detection Results
+                    {blurredImageUrl ? "Blurred Result" : "Detection Results"}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {detectionResult.image_annotated_base64 && (
+                  {blurredImageUrl ? (
+                    <img
+                      src={blurredImageUrl}
+                      alt="Image with license plates blurred"
+                      className="w-full h-auto rounded-lg object-contain max-h-80"
+                      data-testid="img-blurred"
+                    />
+                  ) : detectionResult.image_annotated_base64 && (
                     <img
                       src={detectionResult.image_annotated_base64}
                       alt="Image with detected license plates highlighted"
