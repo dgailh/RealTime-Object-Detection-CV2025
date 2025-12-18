@@ -62,8 +62,12 @@ npm run dev
 ```
 This starts both the frontend (port 5000) and FastAPI backend (port 8000).
 
+## Deployment Notes
+- Python ML dependencies (ultralytics, etc.) are in `[project.optional-dependencies]` to avoid ARM architecture conflicts during deployment
+- The detection/blur features require the Python FastAPI backend, which runs in development only
+- Production deployment builds only the Node.js frontend
+
 ## Future Features
-- **Plate Number Blurring**: Toggle in UI (disabled, coming soon)
 - **OCR**: Extract actual plate text from detected regions
 - **Batch Processing**: Multiple image processing
 
