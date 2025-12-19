@@ -12,16 +12,15 @@ A single-page web application for detecting Saudi license plates using YOLOv8 AI
 - **State Management**: React hooks, TanStack Query for API calls
 
 ### Backend
-Single FastAPI/Python server (port from `$PORT` env):
-- Serves static frontend files from `dist/public/`
-- Runs ONNX model inference for license plate detection
-- API routes under `/api/*`
+- **External API**: Detection handled by `https://realtime-object-detection-cv2025.onrender.com`
+- **Production**: Static Express server serves frontend from `dist/public/`
+- **Development**: Express dev server with Vite HMR
 
 ### Key Files
 - `client/src/pages/home.tsx` - Main detection UI
 - `client/src/App.tsx` - App router
-- `backend/main.py` - FastAPI server with detection API + static file serving
-- `start.py` - Production startup script
+- `server/static-server.ts` - Production static file server
+- `script/build.ts` - Build script (Vite + esbuild)
 - `shared/schema.ts` - Shared TypeScript types
 
 
@@ -68,16 +67,15 @@ This starts Express for development with hot-reload and proxies to FastAPI.
 
 ### Production
 ```bash
-npm run build  # Build frontend
-python3 start.py  # Start FastAPI server
+npm run build  # Build frontend + static server
+npm run start  # Start production server
 ```
-Single FastAPI server serves both frontend and API on `$PORT`.
+Static Express server serves frontend, API calls go to external backend.
 
 ## Deployment Notes
-- Uses ONNX Runtime instead of ultralytics/PyTorch for ARM architecture compatibility
-- Lightweight Python dependencies: fastapi, uvicorn, opencv-python-headless, numpy, onnxruntime
-- Detection and blur features work in both development and production
-- Single server architecture for Replit deployment compatibility
+- Frontend calls external API at `https://realtime-object-detection-cv2025.onrender.com`
+- Production build creates `dist/index.cjs` (server) and `dist/public/` (assets)
+- Node.js static server for Replit deployment
 
 ## Future Features
 - **OCR**: Extract actual plate text from detected regions
