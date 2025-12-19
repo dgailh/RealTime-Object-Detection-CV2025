@@ -1,0 +1,107 @@
+Build a single-page web app (one page only) that lets a user upload an image and runs our YOLOv8 license-plate detection model on it, then displays the detection results with a confidence meter.
+
+Requirements
+
+UI (one page)
+
+Title: “Saudi ANPR – License Plate Detector”
+
+A file upload control that accepts: .jpg .jpeg .png .webp
+
+A “Detect Plates” button
+
+A results section that shows:
+
+The original uploaded image
+
+The image with bounding boxes drawn around detected plates
+
+A list of detections with:
+
+detection index (Plate #1, Plate #2, …)
+
+confidence score (0–1 or %)
+
+a confidence meter (progress bar)
+
+Show a “No plates detected” message if none found.
+
+Show a loading state while inference runs.
+
+Handle errors (invalid file, server error, etc.).
+
+Backend API
+Use Python + FastAPI (preferred) or Flask.
+
+Endpoint: POST /detect
+
+Accept image upload (multipart/form-data)
+
+Run YOLOv8 inference using Ultralytics
+
+Return JSON:
+
+{
+  "detections": [
+    {"bbox":[x1,y1,x2,y2], "conf":0.93}
+  ],
+  "image_annotated_base64": "data:image/jpeg;base64,..."
+}
+
+
+bbox must be in pixel coordinates (x1,y1,x2,y2).
+
+If possible also return image width/height.
+
+Model loading
+
+Load model once at startup:
+
+weights path: ./weights/best.pt (configurable)
+
+Device: use GPU if available, otherwise CPU.
+
+Confidence threshold: configurable (default 0.25).
+
+Support multiple detections.
+
+Frontend
+Use plain HTML/CSS/JS or React (your choice). Keep it simple.
+
+On upload, preview image.
+
+On click “Detect Plates”, send file to backend /detect.
+
+Render annotated image and detection list with confidence bars.
+
+Future feature placeholder
+Add a UI toggle (disabled for now) labeled:
+
+“Blur plate numbers (coming soon)”
+Also include a comment in code showing where the blur logic will be added later.
+
+Deliverables
+
+Provide complete code for:
+
+backend/ (FastAPI app, requirements.txt)
+
+frontend/ (single-page app)
+
+Include run instructions:
+
+how to install dependencies
+
+how to start backend
+
+how to serve frontend
+
+Keep code modular and readable.
+
+Notes
+
+Do not implement OCR in this version.
+
+Focus only on detection + confidence visualization.
+
+Use bounding boxes + confidence meter as the core demo.
