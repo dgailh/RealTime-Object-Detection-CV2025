@@ -4,13 +4,14 @@ from typing import List, Dict, Any
 
 import cv2
 import numpy as np
+import onnxruntime as ort
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from ultralytics import YOLO
 
-WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "./weights/best.pt")
+WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "./weights/best.onnx")
 CONF_THRES = float(os.getenv("YOLO_CONF", "0.25"))
 IOU_THRES = float(os.getenv("YOLO_IOU", "0.50"))
+INPUT_SIZE = 640
 
 app = FastAPI(title="ANPR Plate Detection API", version="1.0")
 
@@ -22,16 +23,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model = None
+session = None
 
 @app.on_event("startup")
 async def startup_event():
-    global model
+    global session
     if not os.path.exists(WEIGHTS_PATH):
         raise RuntimeError(f"Model weights not found at {WEIGHTS_PATH}")
-    print(f"Loading YOLOv8 model from {WEIGHTS_PATH}...")
-    model = YOLO(WEIGHTS_PATH)
-    print("Model loaded successfully")
+    print(f"Loading ONNX model from {WEIGHTS_PATH}...")
+    session = ort.InferenceSession(WEIGHTS_PATH, providers=['CPUExecutionProvider'])
+    print("ONNX model loaded successfully")
 
 def _load_image_from_upload(file_bytes: bytes) -> np.ndarray:
     arr = np.frombuffer(file_bytes, dtype=np.uint8)
@@ -39,6 +40,115 @@ def _load_image_from_upload(file_bytes: bytes) -> np.ndarray:
     if img is None:
         raise ValueError("Could not decode image. Supported: jpg/jpeg/png/webp.")
     return img
+
+def _preprocess(img_bgr: np.ndarray):
+    """Preprocess image for YOLO ONNX model."""
+    h, w = img_bgr.shape[:2]
+    scale = min(INPUT_SIZE / w, INPUT_SIZE / h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    resized = cv2.resize(img_bgr, (new_w, new_h))
+    
+    padded = np.full((INPUT_SIZE, INPUT_SIZE, 3), 114, dtype=np.uint8)
+    pad_x, pad_y = (INPUT_SIZE - new_w) // 2, (INPUT_SIZE - new_h) // 2
+    padded[pad_y:pad_y + new_h, pad_x:pad_x + new_w] = resized
+    
+    blob = padded.astype(np.float32) / 255.0
+    blob = blob.transpose(2, 0, 1)
+    blob = np.expand_dims(blob, axis=0)
+    
+    return blob, scale, pad_x, pad_y
+
+def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> List[int]:
+    """Non-maximum suppression."""
+    if len(boxes) == 0:
+        return []
+    
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+    areas = (x2 - x1) * (y2 - y1)
+    
+    order = scores.argsort()[::-1]
+    keep = []
+    
+    while len(order) > 0:
+        i = order[0]
+        keep.append(i)
+        
+        if len(order) == 1:
+            break
+            
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        
+        w = np.maximum(0.0, xx2 - xx1)
+        h = np.maximum(0.0, yy2 - yy1)
+        inter = w * h
+        
+        iou = inter / (areas[i] + areas[order[1:]] - inter)
+        inds = np.where(iou <= iou_threshold)[0]
+        order = order[inds + 1]
+    
+    return keep
+
+def _postprocess(output: np.ndarray, orig_w: int, orig_h: int, scale: float, pad_x: int, pad_y: int) -> List[Dict[str, Any]]:
+    """Post-process YOLO ONNX output to get detections."""
+    predictions = output[0]
+    
+    if predictions.shape[0] == 1:
+        predictions = predictions[0]
+    
+    if predictions.shape[0] < predictions.shape[1]:
+        predictions = predictions.T
+    
+    boxes = []
+    scores = []
+    
+    for pred in predictions:
+        if len(pred) >= 5:
+            cx, cy, w, h = pred[0], pred[1], pred[2], pred[3]
+            conf = pred[4] if len(pred) == 5 else np.max(pred[4:])
+            
+            if conf < CONF_THRES:
+                continue
+            
+            x1 = cx - w / 2
+            y1 = cy - h / 2
+            x2 = cx + w / 2
+            y2 = cy + h / 2
+            
+            x1 = (x1 - pad_x) / scale
+            y1 = (y1 - pad_y) / scale
+            x2 = (x2 - pad_x) / scale
+            y2 = (y2 - pad_y) / scale
+            
+            x1 = max(0, min(orig_w, x1))
+            y1 = max(0, min(orig_h, y1))
+            x2 = max(0, min(orig_w, x2))
+            y2 = max(0, min(orig_h, y2))
+            
+            if x2 > x1 and y2 > y1:
+                boxes.append([x1, y1, x2, y2])
+                scores.append(conf)
+    
+    if len(boxes) == 0:
+        return []
+    
+    boxes = np.array(boxes)
+    scores = np.array(scores)
+    keep = _nms(boxes, scores, IOU_THRES)
+    
+    detections = []
+    for i in keep:
+        detections.append({
+            "bbox": [int(boxes[i][0]), int(boxes[i][1]), int(boxes[i][2]), int(boxes[i][3])],
+            "conf": float(scores[i])
+        })
+    
+    return detections
 
 def _annotate_image(img_bgr: np.ndarray, detections: List[Dict[str, Any]]) -> np.ndarray:
     out = img_bgr.copy()
@@ -77,14 +187,14 @@ def health():
     return {
         "status": "ok",
         "weights": WEIGHTS_PATH,
-        "model_loaded": model is not None
+        "model_loaded": session is not None
     }
 
 @app.post("/detect")
 async def detect(file: UploadFile = File(...)):
-    global model
+    global session
 
-    if model is None:
+    if session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
     content = await file.read()
@@ -95,16 +205,10 @@ async def detect(file: UploadFile = File(...)):
 
     h, w = img.shape[:2]
 
-    results = model.predict(img, conf=CONF_THRES, iou=IOU_THRES, verbose=False)
-    detections: List[Dict[str, Any]] = []
-    if results and results[0].boxes is not None and len(results[0].boxes) > 0:
-        boxes_xyxy = results[0].boxes.xyxy.cpu().numpy()
-        confs = results[0].boxes.conf.cpu().numpy()
-        for (x1, y1, x2, y2), c in zip(boxes_xyxy, confs):
-            detections.append({
-                "bbox": [int(x1), int(y1), int(x2), int(y2)],
-                "conf": float(c)
-            })
+    blob, scale, pad_x, pad_y = _preprocess(img)
+    input_name = session.get_inputs()[0].name
+    output = session.run(None, {input_name: blob})
+    detections = _postprocess(output[0], w, h, scale, pad_x, pad_y)
 
     annotated = _annotate_image(img, detections)
     annotated_b64 = _bgr_to_base64_jpeg(annotated)
@@ -120,9 +224,9 @@ async def detect(file: UploadFile = File(...)):
 
 @app.post("/detect-and-blur")
 async def detect_and_blur(file: UploadFile = File(...)):
-    global model
+    global session
 
-    if model is None:
+    if session is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
     content = await file.read()
@@ -133,16 +237,10 @@ async def detect_and_blur(file: UploadFile = File(...)):
 
     h, w = img.shape[:2]
 
-    results = model.predict(img, conf=CONF_THRES, iou=IOU_THRES, verbose=False)
-    detections: List[Dict[str, Any]] = []
-    if results and results[0].boxes is not None and len(results[0].boxes) > 0:
-        boxes_xyxy = results[0].boxes.xyxy.cpu().numpy()
-        confs = results[0].boxes.conf.cpu().numpy()
-        for (x1, y1, x2, y2), c in zip(boxes_xyxy, confs):
-            detections.append({
-                "bbox": [int(x1), int(y1), int(x2), int(y2)],
-                "conf": float(c)
-            })
+    blob, scale, pad_x, pad_y = _preprocess(img)
+    input_name = session.get_inputs()[0].name
+    output = session.run(None, {input_name: blob})
+    detections = _postprocess(output[0], w, h, scale, pad_x, pad_y)
 
     blurred = _blur_regions(img, detections, ksize=41)
     blurred_b64 = _bgr_to_base64_jpeg(blurred)
