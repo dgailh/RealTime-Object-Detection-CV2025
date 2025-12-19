@@ -1,0 +1,37 @@
+# Development files
+.git
+.gitignore
+*.md
+*.log
+
+# Development dependencies
+node_modules
+.venv
+__pycache__
+*.pyc
+
+# Source files (only need dist for production)
+client/src
+server
+shared
+script
+
+# Test files
+*.test.*
+*.spec.*
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+
+# Old weights (only need ONNX)
+weights/*.pt
+
+# Attached assets
+attached_assets
+
+# Cache
+.cache
+.npm
