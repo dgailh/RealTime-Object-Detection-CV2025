@@ -49,12 +49,13 @@ Check server health status.
 ## Configuration
 
 ### Environment Variables
-- `YOLO_WEIGHTS_PATH` - Path to YOLOv8 weights (default: `./weights/best.pt`)
-- `CONFIDENCE_THRESHOLD` - Detection confidence threshold (default: 0.25)
+- `YOLO_WEIGHTS` - Path to ONNX model (default: `./weights/best.onnx`)
+- `YOLO_CONF` - Detection confidence threshold (default: 0.25)
+- `YOLO_IOU` - NMS IOU threshold (default: 0.50)
 - `FASTAPI_PORT` - FastAPI server port (default: 8000)
 
 ### Model Weights
-Place YOLOv8 weights at `./weights/best.pt`. Without weights, the app runs in mock mode for testing.
+Place ONNX model at `./weights/best.onnx`. The app uses ONNX Runtime for ARM-compatible production deployment.
 
 ## Running the Application
 ```bash
@@ -63,9 +64,9 @@ npm run dev
 This starts both the frontend (port 5000) and FastAPI backend (port 8000).
 
 ## Deployment Notes
-- Python ML dependencies (ultralytics, etc.) are in `[project.optional-dependencies]` to avoid ARM architecture conflicts during deployment
-- The detection/blur features require the Python FastAPI backend, which runs in development only
-- Production deployment builds only the Node.js frontend
+- Uses ONNX Runtime instead of ultralytics/PyTorch for ARM architecture compatibility
+- Lightweight Python dependencies: fastapi, uvicorn, opencv-python-headless, numpy, onnxruntime
+- Detection and blur features work in both development and production
 
 ## Future Features
 - **OCR**: Extract actual plate text from detected regions
