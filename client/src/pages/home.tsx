@@ -1,12 +1,11 @@
 import { useState, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, Loader2, AlertTriangle, Image as ImageIcon, X, ScanLine, Shield } from "lucide-react";
 import type { Detection, DetectionResponse } from "@shared/schema";
 
+const API_BASE = "https://realtime-object-detection-cv2025.onrender.com";
 const ACCEPTED_FILE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -17,8 +16,6 @@ export default function Home() {
   const [detectionResult, setDetectionResult] = useState<DetectionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [blurEnabled, setBlurEnabled] = useState(false);
-  const [blurredImageUrl, setBlurredImageUrl] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -85,13 +82,12 @@ export default function Home() {
 
     setIsDetecting(true);
     setError(null);
-    setBlurredImageUrl(null);
 
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
 
-      const response = await fetch("/api/detect", {
+      const response = await fetch(`${API_BASE}/api/detect`, {
         method: "POST",
         body: formData,
       });
@@ -103,25 +99,10 @@ export default function Home() {
 
       const result: DetectionResponse = await response.json();
       setDetectionResult(result);
-
-      if (blurEnabled && result.detections.length > 0) {
-        const blurFormData = new FormData();
-        blurFormData.append("file", selectedFile);
-
-        const blurResponse = await fetch("/api/detect-and-blur", {
-          method: "POST",
-          body: blurFormData,
-        });
-
-        if (blurResponse.ok) {
-          const blurResult = await blurResponse.json();
-          setBlurredImageUrl(blurResult.image_blurred_base64);
-        }
-      }
       
       toast({
         title: "Detection Complete",
-        description: `Found ${result.detections.length} license plate(s)${blurEnabled && result.detections.length > 0 ? " - plates blurred" : ""}`,
+        description: `Found ${result.detections.length} license plate(s)`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred";
@@ -144,7 +125,6 @@ export default function Home() {
     setPreviewUrl(null);
     setDetectionResult(null);
     setError(null);
-    setBlurredImageUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }

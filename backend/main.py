@@ -293,8 +293,10 @@ def api_health():
 
 
 if STATIC_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
-    
+    app.mount("/assets",
+              StaticFiles(directory=STATIC_DIR / "assets"),
+              name="assets")
+
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         file_path = STATIC_DIR / full_path
