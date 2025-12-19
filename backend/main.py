@@ -1,5 +1,6 @@
 import base64
 import os
+from pathlib import Path
 from typing import List, Dict, Any
 
 import cv2
@@ -7,8 +8,11 @@ import numpy as np
 import onnxruntime as ort
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "./weights/best.onnx")
+STATIC_DIR = Path(os.getenv("STATIC_DIR", "./dist/public"))
 CONF_THRES = float(os.getenv("YOLO_CONF", "0.25"))
 IOU_THRES = float(os.getenv("YOLO_IOU", "0.50"))
 INPUT_SIZE = 640
@@ -281,6 +285,22 @@ async def detect_and_blur(file: UploadFile = File(...)):
         "detections": detections,
         "image_blurred_base64": blurred_b64
     }
+
+
+@app.get("/api/health")
+def api_health():
+    return health()
+
+
+if STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+    
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = STATIC_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(STATIC_DIR / "index.html")
 
 
 if __name__ == "__main__":
