@@ -4,3 +4,4 @@ python-multipart==0.0.12
 onnxruntime
 opencv-python==4.10.0.84
 numpy==1.26.4
+opencv-python-headless
