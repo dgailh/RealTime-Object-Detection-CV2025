@@ -6,7 +6,7 @@ async function buildAll() {
 
   console.log("Building frontend...");
   await viteBuild();
-
+  
   console.log("Build complete! Frontend assets in dist/public/");
 }
 
