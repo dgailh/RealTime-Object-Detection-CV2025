@@ -12,17 +12,18 @@ A single-page web application for detecting Saudi license plates using YOLOv8 AI
 - **State Management**: React hooks, TanStack Query for API calls
 
 ### Backend
-Two servers work together:
-1. **Express/Node.js** (port 5000): Serves frontend, proxies API requests
-2. **FastAPI/Python** (port 8000): Runs YOLOv8 inference
+Single FastAPI/Python server (port from `$PORT` env):
+- Serves static frontend files from `dist/public/`
+- Runs ONNX model inference for license plate detection
+- API routes under `/api/*`
 
 ### Key Files
 - `client/src/pages/home.tsx` - Main detection UI
 - `client/src/App.tsx` - App router
-- `server/index.ts` - Express server + FastAPI spawner
-- `server/routes.ts` - API routes and proxy
-- `backend/main.py` - FastAPI detection API
+- `backend/main.py` - FastAPI server with detection API + static file serving
+- `start.py` - Production startup script
 - `shared/schema.ts` - Shared TypeScript types
+
 
 ## API Endpoints
 
@@ -58,15 +59,25 @@ Check server health status.
 Place ONNX model at `./weights/best.onnx`. The app uses ONNX Runtime for ARM-compatible production deployment.
 
 ## Running the Application
+
+### Development
 ```bash
 npm run dev
 ```
-This starts both the frontend (port 5000) and FastAPI backend (port 8000).
+This starts Express for development with hot-reload and proxies to FastAPI.
+
+### Production
+```bash
+npm run build  # Build frontend
+python3 start.py  # Start FastAPI server
+```
+Single FastAPI server serves both frontend and API on `$PORT`.
 
 ## Deployment Notes
 - Uses ONNX Runtime instead of ultralytics/PyTorch for ARM architecture compatibility
 - Lightweight Python dependencies: fastapi, uvicorn, opencv-python-headless, numpy, onnxruntime
 - Detection and blur features work in both development and production
+- Single server architecture for Replit deployment compatibility
 
 ## Future Features
 - **OCR**: Extract actual plate text from detected regions
