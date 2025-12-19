@@ -3,7 +3,10 @@ name = "repl-nix-workspace"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11,<3.12"
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
     "fastapi>=0.125.0",
     "numpy>=2.3.5",
     "opencv-python-headless>=4.11.0.86",
