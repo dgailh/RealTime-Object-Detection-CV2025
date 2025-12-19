@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, Loader2, AlertTriangle, Image as ImageIcon, X, ScanLine, Shield } from "lucide-react";
 import type { Detection, DetectionResponse } from "@shared/schema";
@@ -16,6 +18,8 @@ export default function Home() {
   const [detectionResult, setDetectionResult] = useState<DetectionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [blurEnabled, setBlurEnabled] = useState(false);
+  const [blurredImageUrl, setBlurredImageUrl] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -82,6 +86,7 @@ export default function Home() {
 
     setIsDetecting(true);
     setError(null);
+    setBlurredImageUrl(null);
 
     try {
       const formData = new FormData();
@@ -99,10 +104,25 @@ export default function Home() {
 
       const result: DetectionResponse = await response.json();
       setDetectionResult(result);
+
+      if (blurEnabled && result.detections.length > 0) {
+        const blurFormData = new FormData();
+        blurFormData.append("file", selectedFile);
+
+        const blurResponse = await fetch(`${API_BASE}/api/detect-and-blur`, {
+          method: "POST",
+          body: blurFormData,
+        });
+
+        if (blurResponse.ok) {
+          const blurResult = await blurResponse.json();
+          setBlurredImageUrl(blurResult.image_blurred_base64);
+        }
+      }
       
       toast({
         title: "Detection Complete",
-        description: `Found ${result.detections.length} license plate(s)`,
+        description: `Found ${result.detections.length} license plate(s)${blurEnabled && result.detections.length > 0 ? " - plates blurred" : ""}`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred";
@@ -125,6 +145,7 @@ export default function Home() {
     setPreviewUrl(null);
     setDetectionResult(null);
     setError(null);
+    setBlurredImageUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
