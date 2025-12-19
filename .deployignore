@@ -16,6 +16,15 @@ server
 shared
 script
 
+# Python backend (using external API)
+backend
+main.py
+start.py
+start.sh
+pyproject.toml
+uv.lock
+weights
+
 # Test files
 *.test.*
 *.spec.*
@@ -25,9 +34,6 @@ script
 .idea
 *.swp
 *.swo
-
-# Old weights (only need ONNX)
-weights/*.pt
 
 # Attached assets
 attached_assets
