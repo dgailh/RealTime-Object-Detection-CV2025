@@ -118,7 +118,7 @@ async def blur_zip(file: UploadFile = File(...)):
             detections = _postprocess(output[0], w, h, scale, pad_x, pad_y)
 
             # Blur detected plates
-            blurred = _blur_regions(img, detections, ksize=41)
+            blurred = _blur_regions(img, detections, ksize=91)
 
             # Re-encode (keep same extension where possible)
             ext = os.path.splitext(name.lower())[1]
@@ -382,7 +382,7 @@ async def detect_and_blur(file: UploadFile = File(...)):
     output = session.run(None, {input_name: blob})
     detections = _postprocess(output[0], w, h, scale, pad_x, pad_y)
 
-    blurred = _blur_regions(img, detections, ksize=41)
+    blurred = _blur_regions(img, detections, ksize=91)
     blurred_b64 = _bgr_to_base64_jpeg(blurred)
 
     return {
@@ -417,3 +417,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
