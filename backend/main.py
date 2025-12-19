@@ -25,21 +25,26 @@ app.add_middleware(
 
 session = None
 
+
 @app.on_event("startup")
 async def startup_event():
     global session
     if not os.path.exists(WEIGHTS_PATH):
         raise RuntimeError(f"Model weights not found at {WEIGHTS_PATH}")
     print(f"Loading ONNX model from {WEIGHTS_PATH}...")
-    session = ort.InferenceSession(WEIGHTS_PATH, providers=['CPUExecutionProvider'])
+    session = ort.InferenceSession(WEIGHTS_PATH,
+                                   providers=['CPUExecutionProvider'])
     print("ONNX model loaded successfully")
+
 
 def _load_image_from_upload(file_bytes: bytes) -> np.ndarray:
     arr = np.frombuffer(file_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
-        raise ValueError("Could not decode image. Supported: jpg/jpeg/png/webp.")
+        raise ValueError(
+            "Could not decode image. Supported: jpg/jpeg/png/webp.")
     return img
+
 
 def _preprocess(img_bgr: np.ndarray):
     """Preprocess image for YOLO ONNX model."""
@@ -47,128 +52,148 @@ def _preprocess(img_bgr: np.ndarray):
     scale = min(INPUT_SIZE / w, INPUT_SIZE / h)
     new_w, new_h = int(w * scale), int(h * scale)
     resized = cv2.resize(img_bgr, (new_w, new_h))
-    
+
     padded = np.full((INPUT_SIZE, INPUT_SIZE, 3), 114, dtype=np.uint8)
     pad_x, pad_y = (INPUT_SIZE - new_w) // 2, (INPUT_SIZE - new_h) // 2
     padded[pad_y:pad_y + new_h, pad_x:pad_x + new_w] = resized
-    
+
     blob = padded.astype(np.float32) / 255.0
     blob = blob.transpose(2, 0, 1)
     blob = np.expand_dims(blob, axis=0)
-    
+
     return blob, scale, pad_x, pad_y
 
-def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> List[int]:
+
+def _nms(boxes: np.ndarray, scores: np.ndarray,
+         iou_threshold: float) -> List[int]:
     """Non-maximum suppression."""
     if len(boxes) == 0:
         return []
-    
+
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
     x2 = boxes[:, 2]
     y2 = boxes[:, 3]
     areas = (x2 - x1) * (y2 - y1)
-    
+
     order = scores.argsort()[::-1]
     keep = []
-    
+
     while len(order) > 0:
         i = order[0]
         keep.append(i)
-        
+
         if len(order) == 1:
             break
-            
+
         xx1 = np.maximum(x1[i], x1[order[1:]])
         yy1 = np.maximum(y1[i], y1[order[1:]])
         xx2 = np.minimum(x2[i], x2[order[1:]])
         yy2 = np.minimum(y2[i], y2[order[1:]])
-        
+
         w = np.maximum(0.0, xx2 - xx1)
         h = np.maximum(0.0, yy2 - yy1)
         inter = w * h
-        
+
         iou = inter / (areas[i] + areas[order[1:]] - inter)
         inds = np.where(iou <= iou_threshold)[0]
         order = order[inds + 1]
-    
+
     return keep
 
-def _postprocess(output: np.ndarray, orig_w: int, orig_h: int, scale: float, pad_x: int, pad_y: int) -> List[Dict[str, Any]]:
+
+def _postprocess(output: np.ndarray, orig_w: int, orig_h: int, scale: float,
+                 pad_x: int, pad_y: int) -> List[Dict[str, Any]]:
     """Post-process YOLO ONNX output to get detections."""
     predictions = output[0]
-    
+
     if predictions.shape[0] == 1:
         predictions = predictions[0]
-    
+
     if predictions.shape[0] < predictions.shape[1]:
         predictions = predictions.T
-    
+
     boxes = []
     scores = []
-    
+
     for pred in predictions:
         if len(pred) >= 5:
             cx, cy, w, h = pred[0], pred[1], pred[2], pred[3]
             conf = pred[4] if len(pred) == 5 else np.max(pred[4:])
-            
+
             if conf < CONF_THRES:
                 continue
-            
+
             x1 = cx - w / 2
             y1 = cy - h / 2
             x2 = cx + w / 2
             y2 = cy + h / 2
-            
+
             x1 = (x1 - pad_x) / scale
             y1 = (y1 - pad_y) / scale
             x2 = (x2 - pad_x) / scale
             y2 = (y2 - pad_y) / scale
-            
+
             x1 = max(0, min(orig_w, x1))
             y1 = max(0, min(orig_h, y1))
             x2 = max(0, min(orig_w, x2))
             y2 = max(0, min(orig_h, y2))
-            
+
             if x2 > x1 and y2 > y1:
                 boxes.append([x1, y1, x2, y2])
                 scores.append(conf)
-    
+
     if len(boxes) == 0:
         return []
-    
+
     boxes = np.array(boxes)
     scores = np.array(scores)
     keep = _nms(boxes, scores, IOU_THRES)
-    
+
     detections = []
     for i in keep:
         detections.append({
-            "bbox": [int(boxes[i][0]), int(boxes[i][1]), int(boxes[i][2]), int(boxes[i][3])],
-            "conf": float(scores[i])
+            "bbox": [
+                int(boxes[i][0]),
+                int(boxes[i][1]),
+                int(boxes[i][2]),
+                int(boxes[i][3])
+            ],
+            "conf":
+            float(scores[i])
         })
-    
+
     return detections
 
-def _annotate_image(img_bgr: np.ndarray, detections: List[Dict[str, Any]]) -> np.ndarray:
+
+def _annotate_image(img_bgr: np.ndarray,
+                    detections: List[Dict[str, Any]]) -> np.ndarray:
     out = img_bgr.copy()
     for i, det in enumerate(detections, 1):
         x1, y1, x2, y2 = det["bbox"]
         conf = det["conf"]
-        color = (0, 255, 0) if conf >= 0.8 else (0, 255, 255) if conf >= 0.5 else (0, 0, 255)
+        color = (0, 255,
+                 0) if conf >= 0.8 else (0, 255,
+                                         255) if conf >= 0.5 else (0, 0, 255)
         cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
         label = f"Plate {i}: {conf:.2f}"
-        cv2.putText(out, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        cv2.putText(out, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6, color, 2)
     return out
 
+
 def _bgr_to_base64_jpeg(img_bgr: np.ndarray) -> str:
-    ok, buf = cv2.imencode(".jpg", img_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    ok, buf = cv2.imencode(".jpg", img_bgr,
+                           [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     if not ok:
         raise ValueError("Failed to encode annotated image.")
     b64 = base64.b64encode(buf.tobytes()).decode("utf-8")
     return "data:image/jpeg;base64," + b64
 
-def _blur_regions(img_bgr: np.ndarray, detections: List[Dict[str, Any]], ksize: int = 35) -> np.ndarray:
+
+def _blur_regions(img_bgr: np.ndarray,
+                  detections: List[Dict[str, Any]],
+                  ksize: int = 35) -> np.ndarray:
     """Blur detected regions in the image. ksize must be odd and >= 3."""
     out = img_bgr.copy()
     if ksize % 2 == 0:
@@ -182,6 +207,7 @@ def _blur_regions(img_bgr: np.ndarray, detections: List[Dict[str, Any]], ksize: 
         out[y1:y2, x1:x2] = roi_blur
     return out
 
+
 @app.get("/health")
 def health():
     return {
@@ -190,7 +216,8 @@ def health():
         "model_loaded": session is not None
     }
 
-@app.post("/detect")
+
+@app.post("/api/detect")
 async def detect(file: UploadFile = File(...)):
     global session
 
@@ -222,7 +249,8 @@ async def detect(file: UploadFile = File(...)):
         "image_annotated_base64": annotated_b64
     }
 
-@app.post("/detect-and-blur")
+
+@app.post("/api/detect-and-blur")
 async def detect_and_blur(file: UploadFile = File(...)):
     global session
 
@@ -254,7 +282,8 @@ async def detect_and_blur(file: UploadFile = File(...)):
         "image_blurred_base64": blurred_b64
     }
 
+
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("FASTAPI_PORT", "8000"))
+    port = int(os.getenv("PORT", "8000"))
     uvicorn.run(app, host="0.0.0.0", port=port)
