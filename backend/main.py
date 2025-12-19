@@ -11,6 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+import io
+import zipfile
+import tempfile
+from fastapi.responses import StreamingResponse
+
 WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "./weights/best.onnx")
 STATIC_DIR = Path(os.getenv("STATIC_DIR", "./dist/public"))
 CONF_THRES = float(os.getenv("YOLO_CONF", "0.25"))
@@ -48,6 +53,109 @@ def _load_image_from_upload(file_bytes: bytes) -> np.ndarray:
         raise ValueError(
             "Could not decode image. Supported: jpg/jpeg/png/webp.")
     return img
+
+def _is_image_file(name: str) -> bool:
+    ext = os.path.splitext(name.lower())[1]
+    return ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]
+
+# Zip method 
+@app.post("/api/blur-zip")
+async def blur_zip(file: UploadFile = File(...)):
+    """
+    Accepts a ZIP (<100MB), extracts all images (even in nested folders),
+    detects plates, blurs them, and returns a ZIP for download.
+    """
+    global session
+    if session is None:
+        raise HTTPException(status_code=500, detail="Model not loaded")
+
+    # 100MB limit
+    MAX_BYTES = 100 * 1024 * 1024
+    content = await file.read()
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="ZIP too large (max 100MB)")
+
+    # Validate it's a zip
+    try:
+        zin = zipfile.ZipFile(io.BytesIO(content))
+        _ = zin.infolist()
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+
+    # Build output zip in memory (ok for <=100MB input)
+    out_buf = io.BytesIO()
+    processed_count = 0
+    skipped_count = 0
+
+    with zipfile.ZipFile(out_buf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+        for info in zin.infolist():
+            # Skip directories
+            if info.is_dir():
+                continue
+
+            # Protect against zip-slip paths
+            name = info.filename.replace("\\", "/")
+            if name.startswith("/") or ".." in name.split("/"):
+                skipped_count += 1
+                continue
+
+            if not _is_image_file(name):
+                skipped_count += 1
+                continue
+
+            img_bytes = zin.read(info)
+            # Decode image
+            try:
+                img = _load_image_from_upload(img_bytes)
+            except Exception:
+                skipped_count += 1
+                continue
+
+            h, w = img.shape[:2]
+            blob, scale, pad_x, pad_y = _preprocess(img)
+            input_name = session.get_inputs()[0].name
+            output = session.run(None, {input_name: blob})
+            detections = _postprocess(output[0], w, h, scale, pad_x, pad_y)
+
+            # Blur detected plates
+            blurred = _blur_regions(img, detections, ksize=41)
+
+            # Re-encode (keep same extension where possible)
+            ext = os.path.splitext(name.lower())[1]
+            if ext in [".jpg", ".jpeg"]:
+                ok, enc = cv2.imencode(".jpg", blurred, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+            elif ext == ".png":
+                ok, enc = cv2.imencode(".png", blurred)
+            elif ext == ".webp":
+                ok, enc = cv2.imencode(".webp", blurred, [int(cv2.IMWRITE_WEBP_QUALITY), 90])
+            else:
+                # fallback jpg
+                ok, enc = cv2.imencode(".jpg", blurred, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+                name = os.path.splitext(name)[0] + ".jpg"
+
+            if not ok:
+                skipped_count += 1
+                continue
+
+            # Write back into the zip preserving folders
+            zout.writestr(name, enc.tobytes())
+            processed_count += 1
+
+        # Add a small report file
+        report = (
+            f"Processed images: {processed_count}\n"
+            f"Skipped files: {skipped_count}\n"
+            f"conf_threshold: {CONF_THRES}\n"
+            f"iou_threshold: {IOU_THRES}\n"
+        )
+        zout.writestr("blur_report.txt", report)
+
+    out_buf.seek(0)
+
+    headers = {
+        "Content-Disposition": 'attachment; filename="blurred_images.zip"'
+    }
+    return StreamingResponse(out_buf, media_type="application/zip", headers=headers)
 
 
 def _preprocess(img_bgr: np.ndarray):
