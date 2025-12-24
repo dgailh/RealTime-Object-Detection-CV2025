@@ -1,24 +1,47 @@
-# RealTime-Object-Detection-CV2025
+## PlateSafe – Real-Time License Plate Privacy System
 
-This project implements an Automatic Number Plate Recognition (ANPR) system
-as part of the **EMAI651 – Computer Vision** course.
+A privacy-preserving computer vision system developed for
+EMAI651 – Computer Vision.
 
-## Project Overview
-- License plate detection using **YOLOv8**
+PlateSafe automatically detects and blurs vehicle license plates in images to protect user privacy, particularly for online car sale listings and image sharing platforms.
+
+🌐 Live Demo:
+https://recipe-builder--dgailhomary.replit.app/
+
+## Features
+- License plate detection using YOLOv8
 - Base training on a large generic plate dataset
-- Fine-tuning on **Saudi license plates**
-- OCR applied to detected plates with confidence scores
-- Visual results and evaluation included
+- Fine-tuning on Saudi vehicle images
+- Automatic license plate **blurring (anonymization)**
+- Batch processing (multiple images / ZIP upload)
+- Experimental OCR (ANPR) **not deployed** for privacy reasons
+- Quantitative and qualitative evaluation
 
 ## Tech Stack
 - Python
 - YOLOv8 (Ultralytics, PyTorch)
 - OpenCV
-- EasyOCR
-- Google Colab
+- ONNX Runtime
+- Google Colab (training)
+- Replit (frontend)
+- Render (backend)
 
 ## Results (Detection)
-- mAP@0.50: **0.9458**
-- Recall: **0.9471**
+| Metric        | Value      |
+| ------------- | ---------- |
+| Precision     | **0.9066** |
+| Recall        | **0.9471** |
+| mAP@0.50      | **0.9458** |
+| mAP@0.50–0.95 | **0.8028** |
 
-> Note: Datasets and trained weights are excluded from the repository due to size constraints.
+> Note: Performance was strong on the evaluation dataset, with reduced generalization on highly diverse unseen images due to limited dataset diversity.
+
+## Repository Structure
+
+- **main**
+Backend implementation: model inference, preprocessing, blurring logic, and deployment files.
+- **replit-agent**
+Frontend files generated and managed through Replit integration.
+
+## Notes
+- Project is for academic and educational purposes
